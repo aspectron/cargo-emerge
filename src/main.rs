@@ -6,6 +6,7 @@ mod tpl;
 mod utils;
 mod platform;
 mod manifest;
+mod args;
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -16,11 +17,10 @@ mod linux;
 #[cfg(target_os = "windows")]
 mod windows;
 
-use clap::{Arg, ArgAction, Command};
+use args::Args;
 use context::Context;
 use manifest::Manifest;
 use platform::Platform;
-use std::path::PathBuf;
 
 fn main() {
     if let Err(e) = run() {
@@ -30,63 +30,18 @@ fn main() {
 }
 
 fn run() -> result::Result<()> {
-    let matches = Command::new("emerge")
-        .version(env!("CARGO_PKG_VERSION"))
-        .author("Aspect")
-        .about("Setup generation tool for desktop Rust applications")
-        .arg(
-            Arg::new("path")
-                .short('p')
-                .long("path")
-                .value_name("PATH")
-                .help("Path to Cargo.toml or directory containing it")
-        )
-        .arg(
-            Arg::new("manifest")
-                .short('m')
-                .long("manifest")
-                .value_name("FILE")
-                .help("Path to alternative manifest file (e.g., EXAMPLE.toml) for emerge configuration")
-        )
-        .arg(
-            Arg::new("verbose")
-                .short('v')
-                .long("verbose")
-                .action(ArgAction::SetTrue)
-                .help("Enable verbose output")
-        )
-        .arg(
-            Arg::new("archive")
-                .short('a')
-                .long("archive")
-                .action(ArgAction::SetTrue)
-                .help("Create an archived setup (.tar.gz or .zip)")
-        )
-        .arg(
-            Arg::new("dmg")
-                .long("dmg")
-                .action(ArgAction::SetTrue)
-                .help("Create DMG image (default on macOS)")
-        )
-        .arg(
-            Arg::new("no-build")
-                .long("no-build")
-                .action(ArgAction::SetTrue)
-                .help("Skip build commands (use existing binaries)")
-        )
-        .get_matches();
-
-    let verbose = matches.get_flag("verbose");
-    let archive_flag = matches.get_flag("archive");
-    let dmg_flag = matches.get_flag("dmg");
-    let no_build = matches.get_flag("no-build");
+    // Parse command-line arguments
+    let Args {
+        verbose,
+        archive: archive_flag,
+        dmg: dmg_flag,
+        no_build,
+        path,
+        manifest: emerge_manifest,
+    } = Args::parse();
 
     // Find Cargo.toml
-    let path = matches.get_one::<String>("path").map(PathBuf::from);
     let manifest_path = utils::find_manifest(path.as_deref())?;
-
-    // Get optional alternative manifest file for emerge configuration
-    let emerge_manifest = matches.get_one::<String>("manifest").map(PathBuf::from);
 
     // Create context
     let ctx = Context::new(manifest_path, verbose);
