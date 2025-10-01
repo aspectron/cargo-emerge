@@ -5,7 +5,7 @@ use crate::error::Error;
 use crate::cmd;
 use crate::utils;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use image::ImageReader;
 use icns::{IconFamily, IconType};
 
@@ -22,10 +22,47 @@ pub fn create(ctx: &Context, manifest: &Manifest) -> Result<()> {
     }
     fs::create_dir_all(&temp_dir)?;
 
+    // Pre-process icon to ICNS if needed (before any file operations)
+    let processed_icon_path = if let Some(icon_path) = &manifest.icon {
+        if icon_path.exists() {
+            let icon_temp_dir = std::env::temp_dir().join(format!("emerge-icon-{}", manifest.name));
+            if icon_temp_dir.exists() {
+                fs::remove_dir_all(&icon_temp_dir)?;
+            }
+            fs::create_dir_all(&icon_temp_dir)?;
+            
+            let processed_icon = icon_temp_dir.join("icon.icns");
+            
+            if icon_path.extension().and_then(|e| e.to_str()) == Some("icns") {
+                fs::copy(icon_path, &processed_icon)?;
+            } else {
+                if ctx.verbose {
+                    println!("Converting icon to ICNS format...");
+                }
+                generate_icns_from_image(icon_path, &processed_icon)?;
+            }
+            
+            Some(processed_icon)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // Create the .app bundle structure
     let app_name = format!("{}.app", manifest.title);
     let app_path = temp_dir.join(&app_name);
-    let (macos_dir, _resources_dir) = create_app_bundle_structure(ctx, manifest, &app_path)?;
+    let (macos_dir, resources_dir) = create_app_bundle_structure(ctx, manifest, &app_path)?;
+
+    // Copy the processed ICNS icon first (if available)
+    if let Some(ref processed_icon) = processed_icon_path {
+        let icon_dest = resources_dir.join("icon.icns");
+        if ctx.verbose {
+            println!("Copying processed icon to {}", icon_dest.display());
+        }
+        fs::copy(processed_icon, icon_dest)?;
+    }
 
     // Copy files according to copy operations
     // For macOS DMG, files are copied into the .app bundle's MacOS folder
@@ -83,10 +120,17 @@ pub fn create(ctx: &Context, manifest: &Manifest) -> Result<()> {
         fs::remove_file(&dmg_path)?;
     }
 
-    create_dmg_image(ctx, manifest, &temp_dir, &dmg_path)?;
+    create_dmg_image(ctx, manifest, &temp_dir, &dmg_path, processed_icon_path.as_ref())?;
 
     // Clean up temp directory
     fs::remove_dir_all(&temp_dir)?;
+    
+    // Clean up icon temp directory if it was created
+    if let Some(ref icon_path) = processed_icon_path {
+        if let Some(icon_dir) = icon_path.parent() {
+            let _ = fs::remove_dir_all(icon_dir);
+        }
+    }
 
     println!("DMG created successfully: {}", dmg_path.display());
     Ok(())
@@ -108,10 +152,7 @@ fn create_app_bundle_structure(ctx: &Context, manifest: &Manifest, app_path: &Pa
     // Create Info.plist
     create_info_plist(manifest, &contents_dir)?;
 
-    // Process icon if provided
-    if let Some(icon_path) = &manifest.icon {
-        process_icon(icon_path, &resources_dir)?;
-    }
+    // Note: Icon is now pre-processed and copied separately before other file operations
 
     Ok((macos_dir, resources_dir))
 }
@@ -160,21 +201,6 @@ fn create_info_plist(manifest: &Manifest, contents_dir: &Path) -> Result<()> {
 
     let plist_path = contents_dir.join("Info.plist");
     fs::write(plist_path, plist_content)?;
-
-    Ok(())
-}
-
-fn process_icon(icon_path: &Path, resources_dir: &Path) -> Result<()> {
-    let dst = resources_dir.join("icon.icns");
-
-    // If already an .icns file, just copy it
-    if icon_path.extension().and_then(|e| e.to_str()) == Some("icns") {
-        fs::copy(icon_path, &dst)?;
-        return Ok(());
-    }
-
-    // Otherwise, generate .icns from the source image
-    generate_icns_from_image(icon_path, &dst)?;
 
     Ok(())
 }
@@ -236,7 +262,7 @@ fn generate_icns_from_image(source_path: &Path, output_path: &Path) -> Result<()
     Ok(())
 }
 
-fn create_dmg_image(ctx: &Context, manifest: &Manifest, source_dir: &Path, output_path: &Path) -> Result<()> {
+fn create_dmg_image(ctx: &Context, manifest: &Manifest, source_dir: &Path, output_path: &Path, processed_icon: Option<&PathBuf>) -> Result<()> {
     // Create initial DMG using hdiutil
     let temp_dmg = output_path.with_extension("temp.dmg");
     
@@ -276,13 +302,17 @@ fn create_dmg_image(ctx: &Context, manifest: &Manifest, source_dir: &Path, outpu
 
     // Extract mount point from hdiutil output
     // Output format: /dev/diskN    GUID_partition_scheme    
-    //                /dev/diskNs1  Apple_HFS                /Volumes/VolumeName
+    //                /dev/diskNs1  Apple_HFS                /Volumes/VolumeName (may have spaces)
     let mount_point = mount_output
         .lines()
         .find(|line| line.contains("/Volumes/"))
         .and_then(|line| {
-            line.split_whitespace()
-                .find(|part| part.starts_with("/Volumes/"))
+            // Find the /Volumes/ part and take everything from there to the end
+            if let Some(pos) = line.find("/Volumes/") {
+                Some(line[pos..].trim())
+            } else {
+                None
+            }
         })
         .ok_or_else(|| Error::Custom("Failed to determine mount point from hdiutil output".to_string()))?;
 
@@ -292,6 +322,10 @@ fn create_dmg_image(ctx: &Context, manifest: &Manifest, source_dir: &Path, outpu
 
     // Customize DMG appearance
     customize_dmg_appearance(ctx, manifest, mount_point)?;
+
+    // Note: Icon is already copied to the .app bundle's Resources folder
+    // Volume icon for DMG itself is optional and not set here to avoid space issues
+    let _ = processed_icon; // Suppress unused variable warning
 
     // Sync to ensure all data is flushed to disk before unmounting
     // This is critical to prevent corruption and ensure the DMG is properly unmountable
@@ -330,12 +364,6 @@ fn create_dmg_image(ctx: &Context, manifest: &Manifest, source_dir: &Path, outpu
             output_path.to_str().unwrap(),
         ],
     )?;
-
-    // Configure DMG icon if available
-    if let Some(icon_path) = &manifest.icon
-        && icon_path.exists() {
-        configure_icon(ctx, output_path, icon_path)?;
-    }
 
     // Remove temporary DMG
     fs::remove_file(temp_dmg)?;
@@ -423,81 +451,3 @@ fn customize_dmg_appearance(ctx: &Context, manifest: &Manifest, mount_point: &st
 
     Ok(())
 }
-
-/// Configure the icon for the DMG volume
-/// This sets the .icns file as the custom icon for the DMG file itself
-/// Reference: cargo-nw dmg.rs configure_icon()
-fn configure_icon(ctx: &Context, dmg_path: &Path, icon_path: &Path) -> Result<()> {
-    if ctx.verbose {
-        println!("Configuring DMG icon...");
-    }
-
-    // Create a temporary directory for icon operations
-    let temp_dir = std::env::temp_dir().join("emerge-icon-config");
-    if temp_dir.exists() {
-        fs::remove_dir_all(&temp_dir)?;
-    }
-    fs::create_dir_all(&temp_dir)?;
-
-    // Prepare the icon - convert to ICNS if needed
-    let temp_icon = temp_dir.join("icon.icns");
-    if icon_path.extension().and_then(|e| e.to_str()) == Some("icns") {
-        // Already ICNS, just copy
-        fs::copy(icon_path, &temp_icon)?;
-    } else {
-        // Generate ICNS from the source image
-        if ctx.verbose {
-            println!("Converting icon to ICNS format...");
-        }
-        generate_icns_from_image(icon_path, &temp_icon)?;
-    }
-
-    // Mount the DMG read-write to set the icon
-    let mount_output = cmd::execute_with_output(
-        ctx,
-        "hdiutil",
-        &["attach", dmg_path.to_str().unwrap(), "-readwrite", "-noverify", "-noautoopen"],
-    )?;
-
-    // Extract the mount point
-    let mount_point = mount_output
-        .lines()
-        .last()
-        .and_then(|line| line.split_whitespace().last())
-        .ok_or_else(|| Error::Custom("Failed to determine mount point for icon config".to_string()))?;
-
-    if ctx.verbose {
-        println!("Mounted DMG at: {} for icon configuration", mount_point);
-    }
-
-    let mount_path = Path::new(mount_point);
-
-    // Copy icon to .VolumeIcon.icns in the root of the DMG
-    let volume_icon = mount_path.join(".VolumeIcon.icns");
-    fs::copy(&temp_icon, &volume_icon)?;
-
-    // Use SetFile to set the custom icon attribute
-    // This requires the macOS developer tools
-    cmd::execute(
-        ctx,
-        "SetFile",
-        &["-a", "C", mount_point],
-    )?;
-
-    // Sync before unmounting
-    cmd::execute(ctx, "sync", &[])?;
-    std::thread::sleep(std::time::Duration::from_millis(500));
-
-    // Unmount the DMG
-    cmd::execute(ctx, "hdiutil", &["detach", mount_point])?;
-
-    // Clean up temp directory
-    fs::remove_dir_all(&temp_dir)?;
-
-    if ctx.verbose {
-        println!("DMG icon configured successfully");
-    }
-
-    Ok(())
-}
-

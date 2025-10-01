@@ -118,10 +118,6 @@ impl Manifest {
 
     /// Load manifest with package info from Cargo.toml and emerge config from alternative file
     pub fn load_with_emerge_manifest(ctx: &Context, emerge_manifest_path: &PathBuf) -> Result<Self> {
-        // Read Cargo.toml for package information
-        let cargo_content = fs::read_to_string(&ctx.manifest_path)?;
-        let cargo_toml: CargoToml = toml::from_str(&cargo_content)?;
-
         // Read the alternative manifest file for emerge configuration
         let emerge_path = if emerge_manifest_path.is_absolute() {
             emerge_manifest_path.clone()
@@ -138,27 +134,35 @@ impl Manifest {
 
         let emerge_content = fs::read_to_string(&emerge_path)?;
         
-        // Parse the emerge manifest file
-        // It can be a full TOML with [package.metadata.emerge] or just the emerge section
-        let emerge_config = if let Ok(full_toml) = toml::from_str::<CargoToml>(&emerge_content) {
-            // It's a full Cargo.toml format
-            full_toml
+        // Try parsing as a full Cargo.toml format first
+        if let Ok(full_toml) = toml::from_str::<CargoToml>(&emerge_content) {
+            // Check if it has a [package] section
+            // If it does, use it instead of loading Cargo.toml from workspace
+            let emerge_config = full_toml
                 .package
                 .metadata
+                .clone()
                 .and_then(|m| m.emerge)
                 .ok_or_else(|| Error::InvalidManifest(
                     format!("Missing [package.metadata.emerge] section in {}", emerge_path.display())
-                ))?
-        } else {
-            // Try parsing as just the emerge section
-            toml::from_str::<EmergeConfig>(&emerge_content).map_err(|e| {
-                Error::InvalidManifest(format!(
-                    "Failed to parse emerge manifest at {}: {}",
-                    emerge_path.display(),
-                    e
-                ))
-            })?
-        };
+                ))?;
+            
+            // Use the package info from the emerge manifest itself
+            return Self::process_manifest(ctx, &full_toml.package, emerge_config);
+        }
+        
+        // If not a full Cargo.toml, try parsing as just the emerge section (standalone format)
+        let emerge_config = toml::from_str::<EmergeConfig>(&emerge_content).map_err(|e| {
+            Error::InvalidManifest(format!(
+                "Failed to parse emerge manifest at {}: {}",
+                emerge_path.display(),
+                e
+            ))
+        })?;
+        
+        // For standalone format, we still need Cargo.toml for package info
+        let cargo_content = fs::read_to_string(&ctx.manifest_path)?;
+        let cargo_toml: CargoToml = toml::from_str(&cargo_content)?;
 
         Self::process_manifest(ctx, &cargo_toml.package, emerge_config)
     }
