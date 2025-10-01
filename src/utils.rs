@@ -1,6 +1,6 @@
 use crate::result::Result;
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 /// Copy a file or directory recursively
 pub fn copy_recursively(source: &Path, destination: &Path) -> Result<()> {
@@ -33,7 +33,9 @@ pub fn copy_recursively(source: &Path, destination: &Path) -> Result<()> {
 
 /// Find Cargo.toml in the current directory or specified path
 pub fn find_manifest(path: Option<&Path>) -> Result<PathBuf> {
-    let base_path = path.map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap());
+    let base_path = path
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap());
 
     let manifest_path = if base_path.is_file() && base_path.file_name().unwrap() == "Cargo.toml" {
         base_path
@@ -70,4 +72,3 @@ pub fn platform_string() -> &'static str {
         "unknown"
     }
 }
-

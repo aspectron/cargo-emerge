@@ -8,4 +8,3 @@ use crate::result::Result;
 pub fn build(ctx: &Context, manifest: &Manifest) -> Result<()> {
     archive::create_tar_gz(ctx, manifest)
 }
-

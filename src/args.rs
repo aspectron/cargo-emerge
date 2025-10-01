@@ -6,19 +6,19 @@ use std::path::PathBuf;
 pub struct Args {
     /// Enable verbose output
     pub verbose: bool,
-    
+
     /// Create an archived setup (.tar.gz or .zip)
     pub archive: bool,
-    
+
     /// Create DMG image (default on macOS)
     pub dmg: bool,
-    
+
     /// Skip build commands (use existing binaries)
     pub no_build: bool,
-    
+
     /// Path to Cargo.toml or directory containing it
     pub path: Option<PathBuf>,
-    
+
     /// Path to alternative manifest file for emerge configuration
     pub manifest: Option<PathBuf>,
 }
@@ -81,4 +81,3 @@ impl Args {
         }
     }
 }
-

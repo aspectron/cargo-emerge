@@ -1,13 +1,13 @@
+use crate::cmd;
 use crate::context::Context;
+use crate::error::Error;
 use crate::manifest::Manifest;
 use crate::result::Result;
-use crate::error::Error;
-use crate::cmd;
 use crate::utils;
+use icns::{IconFamily, IconType};
+use image::ImageReader;
 use std::fs;
 use std::path::{Path, PathBuf};
-use image::ImageReader;
-use icns::{IconFamily, IconType};
 
 pub fn create(ctx: &Context, manifest: &Manifest) -> Result<()> {
     println!("Creating DMG for macOS...");
@@ -30,9 +30,9 @@ pub fn create(ctx: &Context, manifest: &Manifest) -> Result<()> {
                 fs::remove_dir_all(&icon_temp_dir)?;
             }
             fs::create_dir_all(&icon_temp_dir)?;
-            
+
             let processed_icon = icon_temp_dir.join("icon.icns");
-            
+
             if icon_path.extension().and_then(|e| e.to_str()) == Some("icns") {
                 fs::copy(icon_path, &processed_icon)?;
             } else {
@@ -41,7 +41,7 @@ pub fn create(ctx: &Context, manifest: &Manifest) -> Result<()> {
                 }
                 generate_icns_from_image(icon_path, &processed_icon)?;
             }
-            
+
             Some(processed_icon)
         } else {
             None
@@ -69,10 +69,11 @@ pub fn create(ctx: &Context, manifest: &Manifest) -> Result<()> {
     // unless they have specific extensions (like .md, .txt, etc.) which go to DMG root
     for (src, dst) in &manifest.copy_operations {
         let dst_extension = dst.extension().and_then(|e| e.to_str());
-        
+
         // Determine if file should go to DMG root or app bundle
-        let is_documentation = matches!(dst_extension, Some("md" | "txt" | "pdf" | "html" | "toml"));
-        
+        let is_documentation =
+            matches!(dst_extension, Some("md" | "txt" | "pdf" | "html" | "toml"));
+
         let dest_path = if is_documentation {
             // Documentation files go to DMG root alongside the .app
             temp_dir.join(dst)
@@ -80,23 +81,24 @@ pub fn create(ctx: &Context, manifest: &Manifest) -> Result<()> {
             // Executable and other files go into the app bundle's MacOS folder
             macos_dir.join(dst)
         };
-        
+
         if ctx.verbose {
             println!("Copying {} to {}", src.display(), dest_path.display());
         }
-        
+
         // Ensure parent directory exists
         if let Some(parent) = dest_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        
+
         utils::copy_recursively(src, &dest_path)?;
-        
+
         // Set executable permissions for files in MacOS folder
         #[cfg(unix)]
         if dest_path.starts_with(&macos_dir)
             && let Ok(metadata) = fs::metadata(&dest_path)
-            && metadata.is_file() {
+            && metadata.is_file()
+        {
             use std::os::unix::fs::PermissionsExt;
             let mut perms = metadata.permissions();
             perms.set_mode(0o755);
@@ -115,16 +117,22 @@ pub fn create(ctx: &Context, manifest: &Manifest) -> Result<()> {
     // Create DMG
     let dmg_filename = format!("{}.dmg", manifest.filename);
     let dmg_path = manifest.output_folder.join(&dmg_filename);
-    
+
     if dmg_path.exists() {
         fs::remove_file(&dmg_path)?;
     }
 
-    create_dmg_image(ctx, manifest, &temp_dir, &dmg_path, processed_icon_path.as_ref())?;
+    create_dmg_image(
+        ctx,
+        manifest,
+        &temp_dir,
+        &dmg_path,
+        processed_icon_path.as_ref(),
+    )?;
 
     // Clean up temp directory
     fs::remove_dir_all(&temp_dir)?;
-    
+
     // Clean up icon temp directory if it was created
     if let Some(ref icon_path) = processed_icon_path {
         if let Some(icon_dir) = icon_path.parent() {
@@ -136,7 +144,11 @@ pub fn create(ctx: &Context, manifest: &Manifest) -> Result<()> {
     Ok(())
 }
 
-fn create_app_bundle_structure(ctx: &Context, manifest: &Manifest, app_path: &Path) -> Result<(std::path::PathBuf, std::path::PathBuf)> {
+fn create_app_bundle_structure(
+    ctx: &Context,
+    manifest: &Manifest,
+    app_path: &Path,
+) -> Result<(std::path::PathBuf, std::path::PathBuf)> {
     // Create .app structure
     let contents_dir = app_path.join("Contents");
     let macos_dir = contents_dir.join("MacOS");
@@ -233,23 +245,14 @@ fn generate_icns_from_image(source_path: &Path, output_path: &Path) -> Result<()
 
     for (icon_type, size) in icon_types {
         // Resize the image
-        let resized = img.resize_exact(
-            size,
-            size,
-            image::imageops::FilterType::Lanczos3,
-        );
+        let resized = img.resize_exact(size, size, image::imageops::FilterType::Lanczos3);
 
         // Convert to RGBA8
         let rgba = resized.to_rgba8();
         let raw_data = rgba.into_raw();
 
         // Create ICNS image using the encode method
-        let icns_image = icns::Image::from_data(
-            icns::PixelFormat::RGBA,
-            size,
-            size,
-            raw_data,
-        )?;
+        let icns_image = icns::Image::from_data(icns::PixelFormat::RGBA, size, size, raw_data)?;
 
         // Encode and add to icon family
         icon_family.add_icon_with_type(&icns_image, icon_type)?;
@@ -262,10 +265,16 @@ fn generate_icns_from_image(source_path: &Path, output_path: &Path) -> Result<()
     Ok(())
 }
 
-fn create_dmg_image(ctx: &Context, manifest: &Manifest, source_dir: &Path, output_path: &Path, processed_icon: Option<&PathBuf>) -> Result<()> {
+fn create_dmg_image(
+    ctx: &Context,
+    manifest: &Manifest,
+    source_dir: &Path,
+    output_path: &Path,
+    processed_icon: Option<&PathBuf>,
+) -> Result<()> {
     // Create initial DMG using hdiutil
     let temp_dmg = output_path.with_extension("temp.dmg");
-    
+
     if ctx.verbose {
         println!("Creating temporary DMG...");
     }
@@ -297,11 +306,17 @@ fn create_dmg_image(ctx: &Context, manifest: &Manifest, source_dir: &Path, outpu
     let mount_output = cmd::execute_with_output(
         ctx,
         "hdiutil",
-        &["attach", "-readwrite", "-noverify", "-noautoopen", temp_dmg.to_str().unwrap()],
+        &[
+            "attach",
+            "-readwrite",
+            "-noverify",
+            "-noautoopen",
+            temp_dmg.to_str().unwrap(),
+        ],
     )?;
 
     // Extract mount point from hdiutil output
-    // Output format: /dev/diskN    GUID_partition_scheme    
+    // Output format: /dev/diskN    GUID_partition_scheme
     //                /dev/diskNs1  Apple_HFS                /Volumes/VolumeName (may have spaces)
     let mount_point = mount_output
         .lines()
@@ -314,7 +329,9 @@ fn create_dmg_image(ctx: &Context, manifest: &Manifest, source_dir: &Path, outpu
                 None
             }
         })
-        .ok_or_else(|| Error::Custom("Failed to determine mount point from hdiutil output".to_string()))?;
+        .ok_or_else(|| {
+            Error::Custom("Failed to determine mount point from hdiutil output".to_string())
+        })?;
 
     if ctx.verbose {
         println!("Mounted at: {}", mount_point);
@@ -375,25 +392,34 @@ fn customize_dmg_appearance(ctx: &Context, manifest: &Manifest, mount_point: &st
     let mount_path = Path::new(mount_point);
 
     // Get DMG configuration or use defaults
-    let window_pos = manifest.dmg.as_ref()
+    let window_pos = manifest
+        .dmg
+        .as_ref()
         .and_then(|d| d.window_position)
         .unwrap_or((100, 100));
-    
-    let window_size = manifest.dmg.as_ref()
+
+    let window_size = manifest
+        .dmg
+        .as_ref()
         .and_then(|d| d.window_size)
         .unwrap_or((600, 400));
-    
-    let app_pos = manifest.dmg.as_ref()
+
+    let app_pos = manifest
+        .dmg
+        .as_ref()
         .and_then(|d| d.app_position)
         .unwrap_or((150, 200));
-    
-    let apps_pos = manifest.dmg.as_ref()
+
+    let apps_pos = manifest
+        .dmg
+        .as_ref()
         .and_then(|d| d.applications_position)
         .unwrap_or((450, 200));
 
     // Copy background image if provided
     if let Some(dmg_config) = &manifest.dmg
-        && let Some(bg_path) = &dmg_config.background {
+        && let Some(bg_path) = &dmg_config.background
+    {
         let bg_src = ctx.base_dir.join(bg_path);
         if bg_src.exists() {
             let background_dir = mount_path.join(".background");
@@ -428,16 +454,25 @@ fn customize_dmg_appearance(ctx: &Context, manifest: &Manifest, mount_point: &st
         end tell
     "#,
         manifest.title,
-        window_pos.0, window_pos.1,
-        window_pos.0 + window_size.0, window_pos.1 + window_size.1,
-        if manifest.dmg.as_ref().and_then(|d| d.background.as_ref()).is_some() {
+        window_pos.0,
+        window_pos.1,
+        window_pos.0 + window_size.0,
+        window_pos.1 + window_size.1,
+        if manifest
+            .dmg
+            .as_ref()
+            .and_then(|d| d.background.as_ref())
+            .is_some()
+        {
             "set background picture of viewOptions to file \".background:background.png\""
         } else {
             ""
         },
         app_name,
-        app_pos.0, app_pos.1,
-        apps_pos.0, apps_pos.1,
+        app_pos.0,
+        app_pos.1,
+        apps_pos.0,
+        apps_pos.1,
     );
 
     // Execute AppleScript

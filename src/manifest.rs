@@ -1,7 +1,7 @@
-use crate::result::Result;
-use crate::error::Error;
-use crate::tpl::Tpl;
 use crate::context::Context;
+use crate::error::Error;
+use crate::result::Result;
+use crate::tpl::Tpl;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -34,23 +34,23 @@ pub struct Metadata {
 pub struct EmergeConfig {
     #[serde(default)]
     pub title: Option<String>,
-    
+
     #[serde(default)]
     pub filename: Option<String>,
-    
+
     #[serde(default)]
     pub build: Vec<String>,
-    
+
     #[serde(default)]
     pub copy: Vec<HashMap<String, String>>,
-    
+
     #[serde(rename = "output-folder", default)]
     pub output_folder: Option<String>,
-    
+
     // Icon configuration
     #[serde(default)]
     pub icon: Option<String>,
-    
+
     // DMG-specific configuration
     #[serde(default)]
     pub dmg: Option<DmgConfig>,
@@ -60,19 +60,19 @@ pub struct EmergeConfig {
 pub struct DmgConfig {
     #[serde(default)]
     pub background: Option<String>,
-    
+
     #[serde(default)]
     pub window_position: Option<(i32, i32)>,
-    
+
     #[serde(default)]
     pub window_size: Option<(i32, i32)>,
-    
+
     #[serde(default)]
     pub app_position: Option<(i32, i32)>,
-    
+
     #[serde(default)]
     pub applications_position: Option<(i32, i32)>,
-    
+
     #[serde(default)]
     pub additional_files: Vec<DmgFile>,
 }
@@ -109,15 +109,20 @@ impl Manifest {
             .metadata
             .clone()
             .and_then(|m| m.emerge)
-            .ok_or_else(|| Error::InvalidManifest(
-                "Missing [package.metadata.emerge] section in Cargo.toml".to_string()
-            ))?;
+            .ok_or_else(|| {
+                Error::InvalidManifest(
+                    "Missing [package.metadata.emerge] section in Cargo.toml".to_string(),
+                )
+            })?;
 
         Self::process_manifest(ctx, &cargo_toml.package, emerge_config)
     }
 
     /// Load manifest with package info from Cargo.toml and emerge config from alternative file
-    pub fn load_with_emerge_manifest(ctx: &Context, emerge_manifest_path: &PathBuf) -> Result<Self> {
+    pub fn load_with_emerge_manifest(
+        ctx: &Context,
+        emerge_manifest_path: &PathBuf,
+    ) -> Result<Self> {
         // Read the alternative manifest file for emerge configuration
         let emerge_path = if emerge_manifest_path.is_absolute() {
             emerge_manifest_path.clone()
@@ -133,7 +138,7 @@ impl Manifest {
         }
 
         let emerge_content = fs::read_to_string(&emerge_path)?;
-        
+
         // Try parsing as a full Cargo.toml format first
         if let Ok(full_toml) = toml::from_str::<CargoToml>(&emerge_content) {
             // Check if it has a [package] section
@@ -143,14 +148,17 @@ impl Manifest {
                 .metadata
                 .clone()
                 .and_then(|m| m.emerge)
-                .ok_or_else(|| Error::InvalidManifest(
-                    format!("Missing [package.metadata.emerge] section in {}", emerge_path.display())
-                ))?;
-            
+                .ok_or_else(|| {
+                    Error::InvalidManifest(format!(
+                        "Missing [package.metadata.emerge] section in {}",
+                        emerge_path.display()
+                    ))
+                })?;
+
             // Use the package info from the emerge manifest itself
             return Self::process_manifest(ctx, &full_toml.package, emerge_config);
         }
-        
+
         // If not a full Cargo.toml, try parsing as just the emerge section (standalone format)
         let emerge_config = toml::from_str::<EmergeConfig>(&emerge_content).map_err(|e| {
             Error::InvalidManifest(format!(
@@ -159,7 +167,7 @@ impl Manifest {
                 e
             ))
         })?;
-        
+
         // For standalone format, we still need Cargo.toml for package info
         let cargo_content = fs::read_to_string(&ctx.manifest_path)?;
         let cargo_toml: CargoToml = toml::from_str(&cargo_content)?;
@@ -168,7 +176,11 @@ impl Manifest {
     }
 
     /// Process the manifest data and create the Manifest struct
-    fn process_manifest(ctx: &Context, package: &Package, emerge_config: EmergeConfig) -> Result<Self> {
+    fn process_manifest(
+        ctx: &Context,
+        package: &Package,
+        emerge_config: EmergeConfig,
+    ) -> Result<Self> {
         // Setup template processor
         let mut tpl = Tpl::new();
         tpl.register("NAME", &package.name);
@@ -176,21 +188,24 @@ impl Manifest {
         tpl.register("PLATFORM", crate::utils::platform_string());
 
         // Process template variables
-        let title = emerge_config.title
+        let title = emerge_config
+            .title
             .map(|t| tpl.parse(&t))
             .unwrap_or_else(|| package.name.clone());
 
-        let filename = emerge_config.filename
+        let filename = emerge_config
+            .filename
             .map(|f| tpl.parse(&f))
-            .unwrap_or_else(|| format!("{}-{}-{}", 
-                package.name, 
-                crate::utils::platform_string(),
-                package.version
-            ));
+            .unwrap_or_else(|| {
+                format!(
+                    "{}-{}-{}",
+                    package.name,
+                    crate::utils::platform_string(),
+                    package.version
+                )
+            });
 
-        let description = package.description
-            .clone()
-            .unwrap_or_default();
+        let description = package.description.clone().unwrap_or_default();
 
         let build_commands = tpl.parse_vec(&emerge_config.build);
 
@@ -204,12 +219,12 @@ impl Manifest {
             }
         }
 
-        let output_folder = emerge_config.output_folder
+        let output_folder = emerge_config
+            .output_folder
             .map(|f| ctx.base_dir.join(tpl.parse(&f)))
             .unwrap_or_else(|| ctx.base_dir.join("setup"));
 
-        let icon = emerge_config.icon
-            .map(|i| ctx.base_dir.join(tpl.parse(&i)));
+        let icon = emerge_config.icon.map(|i| ctx.base_dir.join(tpl.parse(&i)));
 
         Ok(Manifest {
             name: package.name.clone(),
@@ -225,4 +240,3 @@ impl Manifest {
         })
     }
 }
-

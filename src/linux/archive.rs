@@ -2,11 +2,11 @@ use crate::context::Context;
 use crate::manifest::Manifest;
 use crate::result::Result;
 use crate::utils;
+use flate2::Compression;
+use flate2::write::GzEncoder;
 use std::fs::{self, File};
 use std::path::Path;
 use tar::Builder;
-use flate2::Compression;
-use flate2::write::GzEncoder;
 
 pub fn create_tar_gz(ctx: &Context, manifest: &Manifest) -> Result<()> {
     println!("Creating tar.gz archive for Linux...");
@@ -28,27 +28,31 @@ pub fn create_tar_gz(ctx: &Context, manifest: &Manifest) -> Result<()> {
     // Copy files according to copy operations
     for (src, dst) in &manifest.copy_operations {
         let dest_path = app_dir.join(dst);
-        
+
         if ctx.verbose {
             println!("Copying {} to {}", src.display(), dest_path.display());
         }
-        
+
         // Ensure parent directory exists
         if let Some(parent) = dest_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        
+
         utils::copy_recursively(src, &dest_path)?;
-        
+
         // Set executable permissions for binary files (files without common document extensions)
         #[cfg(unix)]
         {
             let dst_extension = dst.extension().and_then(|e| e.to_str());
-            let is_documentation = matches!(dst_extension, Some("md" | "txt" | "pdf" | "html" | "toml" | "json" | "yml" | "yaml"));
-            
+            let is_documentation = matches!(
+                dst_extension,
+                Some("md" | "txt" | "pdf" | "html" | "toml" | "json" | "yml" | "yaml")
+            );
+
             if !is_documentation
                 && let Ok(metadata) = fs::metadata(&dest_path)
-                && metadata.is_file() {
+                && metadata.is_file()
+            {
                 use std::os::unix::fs::PermissionsExt;
                 let mut perms = metadata.permissions();
                 perms.set_mode(0o755);
@@ -80,4 +84,3 @@ fn create_tar_gz_file(source_dir: &Path, output_path: &Path) -> Result<()> {
 
     Ok(())
 }
-

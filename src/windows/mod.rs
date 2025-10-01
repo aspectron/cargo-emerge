@@ -7,4 +7,3 @@ use crate::result::Result;
 pub fn build(ctx: &Context, manifest: &Manifest) -> Result<()> {
     archive::create_zip(ctx, manifest)
 }
-

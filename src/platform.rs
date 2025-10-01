@@ -1,6 +1,6 @@
-use crate::result::Result;
 use crate::context::Context;
 use crate::manifest::Manifest;
+use crate::result::Result;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Platform {
@@ -58,4 +58,3 @@ pub fn build(ctx: &Context, manifest: &Manifest) -> Result<()> {
     }
     Ok(())
 }
-

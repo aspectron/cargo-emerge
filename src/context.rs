@@ -5,10 +5,10 @@ use std::path::PathBuf;
 pub struct Context {
     /// Enable verbose output (show command execution details)
     pub verbose: bool,
-    
+
     /// Path to the Cargo.toml manifest
     pub manifest_path: PathBuf,
-    
+
     /// Base directory (directory containing Cargo.toml)
     pub base_dir: PathBuf,
 }
@@ -27,4 +27,3 @@ impl Context {
         }
     }
 }
-

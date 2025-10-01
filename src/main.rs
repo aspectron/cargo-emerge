@@ -1,12 +1,12 @@
-mod error;
-mod result;
-mod context;
+mod args;
 mod cmd;
+mod context;
+mod error;
+mod manifest;
+mod platform;
+mod result;
 mod tpl;
 mod utils;
-mod platform;
-mod manifest;
-mod args;
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -74,12 +74,12 @@ fn run() -> result::Result<()> {
     if !no_build && !manifest.build_commands.is_empty() {
         let spinner = cliclack::spinner();
         spinner.start("Building application...");
-        
+
         for command in &manifest.build_commands {
             if verbose {
                 spinner.stop(format!("Running: {}", command));
             }
-            
+
             let parts: Vec<&str> = command.split_whitespace().collect();
             if parts.is_empty() {
                 continue;
@@ -90,13 +90,13 @@ fn run() -> result::Result<()> {
 
             cmd::execute(&ctx, program, args)?;
         }
-        
+
         spinner.stop("Build completed");
     }
 
     // Determine what to build
     let current_platform = Platform::current();
-    
+
     if archive_flag {
         // Create archive based on platform
         create_archive(&ctx, &manifest, current_platform)?;
@@ -106,13 +106,13 @@ fn run() -> result::Result<()> {
             cliclack::outro_cancel("DMG creation is only available on macOS")?;
             return Ok(());
         }
-        
+
         let spinner = cliclack::spinner();
         spinner.start("Creating DMG...");
-        
+
         #[cfg(target_os = "macos")]
         macos::dmg::create(&ctx, &manifest)?;
-        
+
         spinner.stop("DMG created successfully");
     } else {
         // Default behavior based on platform
@@ -120,10 +120,10 @@ fn run() -> result::Result<()> {
             Platform::MacOS => {
                 let spinner = cliclack::spinner();
                 spinner.start("Creating DMG...");
-                
+
                 #[cfg(target_os = "macos")]
                 macos::dmg::create(&ctx, &manifest)?;
-                
+
                 spinner.stop("DMG created successfully");
             }
             Platform::Linux => {
@@ -141,7 +141,7 @@ fn run() -> result::Result<()> {
 
 fn create_archive(ctx: &Context, manifest: &Manifest, platform: Platform) -> result::Result<()> {
     let spinner = cliclack::spinner();
-    
+
     match platform {
         Platform::Linux | Platform::MacOS => {
             spinner.start("Creating tar.gz archive...");
@@ -155,6 +155,6 @@ fn create_archive(ctx: &Context, manifest: &Manifest, platform: Platform) -> res
             spinner.stop("Archive created successfully");
         }
     }
-    
+
     Ok(())
 }

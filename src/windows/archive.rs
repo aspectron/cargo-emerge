@@ -1,14 +1,14 @@
 use crate::context::Context;
+use crate::error::Error;
 use crate::manifest::Manifest;
 use crate::result::Result;
-use crate::error::Error;
 use crate::utils;
 use std::fs::{self, File};
+use std::io::{Read, Write};
 use std::path::Path;
-use std::io::{Write, Read};
-use zip::write::FileOptions;
-use zip::ZipWriter;
 use walkdir::WalkDir;
+use zip::ZipWriter;
+use zip::write::FileOptions;
 
 pub fn create_zip(ctx: &Context, manifest: &Manifest) -> Result<()> {
     println!("Creating zip archive for Windows...");
@@ -30,16 +30,16 @@ pub fn create_zip(ctx: &Context, manifest: &Manifest) -> Result<()> {
     // Copy files according to copy operations
     for (src, dst) in &manifest.copy_operations {
         let dest_path = app_dir.join(dst);
-        
+
         if ctx.verbose {
             println!("Copying {} to {}", src.display(), dest_path.display());
         }
-        
+
         // Ensure parent directory exists
         if let Some(parent) = dest_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        
+
         utils::copy_recursively(src, &dest_path)?;
     }
 
@@ -85,4 +85,3 @@ fn create_zip_file(source_dir: &Path, output_path: &Path) -> Result<()> {
     zip.finish()?;
     Ok(())
 }
-

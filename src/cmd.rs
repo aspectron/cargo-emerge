@@ -1,8 +1,8 @@
 use crate::context::Context;
-use crate::result::Result;
 use crate::error::Error;
-use std::process::{Command, Stdio};
+use crate::result::Result;
 use std::io::{BufRead, BufReader};
+use std::process::{Command, Stdio};
 
 /// Execute a command and stream output to stdout if verbose mode is enabled
 pub fn execute(ctx: &Context, program: &str, args: &[&str]) -> Result<()> {
@@ -56,9 +56,7 @@ pub fn execute_with_output(ctx: &Context, program: &str, args: &[&str]) -> Resul
         println!("Executing: {} {}", program, args.join(" "));
     }
 
-    let output = Command::new(program)
-        .args(args)
-        .output()?;
+    let output = Command::new(program).args(args).output()?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -72,4 +70,3 @@ pub fn execute_with_output(ctx: &Context, program: &str, args: &[&str]) -> Resul
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
-
