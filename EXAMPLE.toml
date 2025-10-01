@@ -1,27 +1,12 @@
-# Example Cargo.toml configuration for emerge
-# This shows how to configure your project for setup package generation
+# Emerge project configuration for DMG generation
+# This is configured for the emerge tool itself
 
-[package]
-name = "my-awesome-app"
-version = "1.2.3"
-edition = "2021"
-description = "A desktop application built with Rust and EGUI"
-authors = ["Your Name <you@example.com>"]
-license = "MIT"
-repository = "https://github.com/yourusername/my-awesome-app"
-
-[dependencies]
-# Your dependencies here
-egui = "0.28"
-eframe = "0.28"
-
-# Emerge configuration section
 [package.metadata.emerge]
 # The title displayed in the application bundle and DMG
-title = "My Awesome App"
+title = "Emerge Setup Tool"
 
 # Output filename template (supports $NAME, $VERSION, $PLATFORM variables)
-filename = "my-awesome-app-$PLATFORM-$VERSION"
+filename = "emerge-$PLATFORM-$VERSION"
 
 # Directory where setup packages will be created (relative to Cargo.toml)
 output-folder = "setup"
@@ -36,21 +21,9 @@ build = [
 # Format: { "source/path" = "destination/path" }
 # Paths are relative to the Cargo.toml directory
 copy = [
-    { "assets" = "assets" },
     { "README.md" = "README.md" },
-    { "LICENSE" = "LICENSE" },
+    { "EXAMPLE.toml" = "EXAMPLE.toml" },
 ]
-
-# Optional: Path to application icon
-# macOS: Supports .icns, .png, .jpg, or other image formats
-#        - Automatically converted to .icns with multiple sizes if needed
-#        - Used for the .app bundle icon
-#        - Also used for the DMG volume icon
-#        - Generates proper retina (@2x) icon sizes
-# Windows: Use .ico format (or .png - will be converted)
-# Linux: Use .png format
-# Recommended: Provide a high-resolution PNG (1024x1024 or larger) for best quality
-icon = "assets/icon.png"
 
 # DMG-specific configuration (macOS only)
 # This section is optional - if omitted, reasonable defaults will be used
