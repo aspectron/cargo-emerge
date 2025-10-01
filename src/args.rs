@@ -28,7 +28,6 @@ impl Args {
     pub fn parse() -> Self {
         let matches = Command::new("emerge")
             .version(env!("CARGO_PKG_VERSION"))
-            .author("Aspect")
             .about("Setup generation tool for desktop Rust applications")
             .arg(
                 Arg::new("path")
