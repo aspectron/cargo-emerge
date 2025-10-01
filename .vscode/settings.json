@@ -1,5 +1,11 @@
 {
     "cSpell.words": [
-        "clippy"
+        "cliclack",
+        "clippy",
+        "flate",
+        "icns",
+        "serde",
+        "thiserror",
+        "walkdir"
     ]
 }
