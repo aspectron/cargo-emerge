@@ -26,7 +26,7 @@ cargo install --path .
 Navigate to your project directory and run:
 
 ```bash
-emerge
+cargo emerge
 ```
 
 This will:
@@ -37,7 +37,7 @@ This will:
 ### Command Line Options
 
 ```bash
-emerge [OPTIONS]
+cargo emerge [OPTIONS]
 
 Options:
   -p, --path <PATH>       Path to Cargo.toml or directory containing it
