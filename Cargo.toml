@@ -1,0 +1,15 @@
+[package]
+name = "emerge"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = "*"
+thiserror = "2.0.17"
+
+# [package.metadata.emerge]
+# title = "Emerge"
+# build = [
+#     "cargo build --release -p <binary-name>"
+# ]
+
