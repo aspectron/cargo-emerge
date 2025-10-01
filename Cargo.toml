@@ -4,12 +4,23 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-clap = "*"
-thiserror = "2.0.17"
+clap = { version = "4", features = ["cargo", "env"] }
+thiserror = "2"
+cliclack = "0.3.6"
+zip = { version = "5.1.1", default-features = false, features = ["deflate"] }
+tar = "0.4"
+flate2 = "1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+serde = { version = "1", features = ["derive"] }
+toml = "0.9.7"
+walkdir = "2"
+time = { version = "0.3", features = ["macros"] }
 
-# [package.metadata.emerge]
-# title = "Emerge"
-# build = [
-#     "cargo build --release -p <binary-name>"
-# ]
+[package.metadata.emerge]
+title = "Emerge"
+filename = "emerge-$PLATFORM-$VERSION"
+output-folder = "setup"
+build = [
+    "cargo build --release"
+]
 

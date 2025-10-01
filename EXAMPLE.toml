@@ -1,0 +1,74 @@
+# Example Cargo.toml configuration for emerge
+# This shows how to configure your project for setup package generation
+
+[package]
+name = "my-awesome-app"
+version = "1.2.3"
+edition = "2021"
+description = "A desktop application built with Rust and EGUI"
+authors = ["Your Name <you@example.com>"]
+license = "MIT"
+repository = "https://github.com/yourusername/my-awesome-app"
+
+[dependencies]
+# Your dependencies here
+egui = "0.28"
+eframe = "0.28"
+
+# Emerge configuration section
+[package.metadata.emerge]
+# The title displayed in the application bundle and DMG
+title = "My Awesome App"
+
+# Output filename template (supports $NAME, $VERSION, $PLATFORM variables)
+filename = "my-awesome-app-$PLATFORM-$VERSION"
+
+# Directory where setup packages will be created (relative to Cargo.toml)
+output-folder = "setup"
+
+# Build commands to execute before packaging
+# These run in order, and emerge will stream their output
+build = [
+    "cargo build --release",
+]
+
+# Files and directories to copy into the package
+# Format: { "source/path" : "destination/path" }
+# Paths are relative to the Cargo.toml directory
+copy = [
+    { "assets" : "assets" },
+    { "README.md" : "README.md" },
+    { "LICENSE" : "LICENSE" },
+]
+
+# Optional: Path to application icon
+# macOS: Use .icns format for best results
+#        - Used for the .app bundle icon
+#        - Also used for the DMG volume icon (requires .icns)
+# Windows: Use .ico format
+# Linux: Use .png format
+icon = "assets/icon.icns"
+
+# DMG-specific configuration (macOS only)
+# This section is optional - if omitted, reasonable defaults will be used
+[package.metadata.emerge.dmg]
+# Path to background image for the DMG window (PNG format recommended)
+background = "assets/dmg-background.png"
+
+# Position of the DMG window when opened [x, y]
+window_position = [100, 100]
+
+# Size of the DMG window [width, height]
+window_size = [600, 400]
+
+# Position of your application icon in the DMG [x, y]
+app_position = [150, 200]
+
+# Position of the Applications folder symlink [x, y]
+applications_position = [450, 200]
+
+# Optional: Additional files to include in the DMG with custom positions
+# [[package.metadata.emerge.dmg.additional_files]]
+# source = "docs/QuickStart.pdf"
+# position = [300, 300]
+
