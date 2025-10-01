@@ -5,6 +5,7 @@ A setup generation tool for desktop Rust applications that creates professional,
 ## Features
 
 - **macOS DMG Creation**: Generate beautiful, customizable DMG disk images with custom backgrounds, window positioning, and icon placement
+- **Automatic Icon Conversion**: Convert PNG, JPEG, or other image formats to .icns with proper retina support
 - **Windows ZIP Archives**: Create zip archives with your application and resources
 - **Linux TAR.GZ Archives**: Generate compressed tar archives for Linux distribution
 - **Template Variables**: Support for dynamic file naming with `$VARIABLE` syntax
@@ -86,7 +87,9 @@ copy = [
 ]
 
 # Optional: Path to application icon
-icon = "assets/icon.icns"
+# Supports .icns, .png, .jpg, and other formats
+# Will automatically convert to .icns with proper retina sizes
+icon = "assets/icon.png"
 
 # DMG-specific configuration (macOS only)
 [package.metadata.emerge.dmg]

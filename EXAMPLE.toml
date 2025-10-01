@@ -42,12 +42,15 @@ copy = [
 ]
 
 # Optional: Path to application icon
-# macOS: Use .icns format for best results
+# macOS: Supports .icns, .png, .jpg, or other image formats
+#        - Automatically converted to .icns with multiple sizes if needed
 #        - Used for the .app bundle icon
-#        - Also used for the DMG volume icon (requires .icns)
-# Windows: Use .ico format
+#        - Also used for the DMG volume icon
+#        - Generates proper retina (@2x) icon sizes
+# Windows: Use .ico format (or .png - will be converted)
 # Linux: Use .png format
-icon = "assets/icon.icns"
+# Recommended: Provide a high-resolution PNG (1024x1024 or larger) for best quality
+icon = "assets/icon.png"
 
 # DMG-specific configuration (macOS only)
 # This section is optional - if omitted, reasonable defaults will be used

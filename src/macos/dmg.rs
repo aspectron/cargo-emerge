@@ -6,6 +6,8 @@ use crate::cmd;
 use crate::utils;
 use std::fs;
 use std::path::Path;
+use image::ImageReader;
+use icns::{IconFamily, IconType};
 
 pub fn create(ctx: &Context, manifest: &Manifest) -> Result<()> {
     println!("Creating DMG for macOS...");
@@ -150,16 +152,73 @@ fn create_info_plist(manifest: &Manifest, contents_dir: &Path) -> Result<()> {
 }
 
 fn process_icon(icon_path: &Path, resources_dir: &Path) -> Result<()> {
-    // For now, if the icon is already an .icns file, just copy it
-    // Otherwise, we would need iconutil or similar to convert
+    let dst = resources_dir.join("icon.icns");
+
+    // If already an .icns file, just copy it
     if icon_path.extension().and_then(|e| e.to_str()) == Some("icns") {
-        let dst = resources_dir.join("icon.icns");
-        fs::copy(icon_path, dst)?;
-    } else {
-        // For other formats, we'd need to create an .icns file
-        // This is a simplified version - a full implementation would use iconutil
-        println!("Warning: Icon conversion not fully implemented. Please provide .icns file.");
+        fs::copy(icon_path, &dst)?;
+        return Ok(());
     }
+
+    // Otherwise, generate .icns from the source image
+    generate_icns_from_image(icon_path, &dst)?;
+
+    Ok(())
+}
+
+/// Generate an ICNS file from a source image (PNG, JPEG, etc.)
+/// Supports multiple icon sizes as required by macOS
+fn generate_icns_from_image(source_path: &Path, output_path: &Path) -> Result<()> {
+    // Load the source image
+    let img = ImageReader::open(source_path)?
+        .with_guessed_format()?
+        .decode()?;
+
+    // Create a new IconFamily
+    let mut icon_family = IconFamily::new();
+
+    // Define the icon sizes we want to generate
+    // macOS uses multiple sizes for different contexts
+    let icon_types = vec![
+        (IconType::RGBA32_16x16, 16),
+        (IconType::RGBA32_16x16_2x, 32),
+        (IconType::RGBA32_32x32, 32),
+        (IconType::RGBA32_32x32_2x, 64),
+        (IconType::RGBA32_128x128, 128),
+        (IconType::RGBA32_128x128_2x, 256),
+        (IconType::RGBA32_256x256, 256),
+        (IconType::RGBA32_256x256_2x, 512),
+        (IconType::RGBA32_512x512, 512),
+        (IconType::RGBA32_512x512_2x, 1024),
+    ];
+
+    for (icon_type, size) in icon_types {
+        // Resize the image
+        let resized = img.resize_exact(
+            size,
+            size,
+            image::imageops::FilterType::Lanczos3,
+        );
+
+        // Convert to RGBA8
+        let rgba = resized.to_rgba8();
+        let raw_data = rgba.into_raw();
+
+        // Create ICNS image using the encode method
+        let icns_image = icns::Image::from_data(
+            icns::PixelFormat::RGBA,
+            size,
+            size,
+            raw_data,
+        )?;
+
+        // Encode and add to icon family
+        icon_family.add_icon_with_type(&icns_image, icon_type)?;
+    }
+
+    // Write the ICNS file
+    let output_file = fs::File::create(output_path)?;
+    icon_family.write(output_file)?;
 
     Ok(())
 }
@@ -256,7 +315,7 @@ fn create_dmg_image(ctx: &Context, manifest: &Manifest, source_dir: &Path, outpu
 
     // Configure DMG icon if available
     if let Some(icon_path) = &manifest.icon
-        && icon_path.exists() && icon_path.extension().and_then(|e| e.to_str()) == Some("icns") {
+        && icon_path.exists() {
         configure_icon(ctx, output_path, icon_path)?;
     }
 
@@ -362,9 +421,18 @@ fn configure_icon(ctx: &Context, dmg_path: &Path, icon_path: &Path) -> Result<()
     }
     fs::create_dir_all(&temp_dir)?;
 
-    // Copy the icon to a temporary location
+    // Prepare the icon - convert to ICNS if needed
     let temp_icon = temp_dir.join("icon.icns");
-    fs::copy(icon_path, &temp_icon)?;
+    if icon_path.extension().and_then(|e| e.to_str()) == Some("icns") {
+        // Already ICNS, just copy
+        fs::copy(icon_path, &temp_icon)?;
+    } else {
+        // Generate ICNS from the source image
+        if ctx.verbose {
+            println!("Converting icon to ICNS format...");
+        }
+        generate_icns_from_image(icon_path, &temp_icon)?;
+    }
 
     // Mount the DMG read-write to set the icon
     let mount_output = cmd::execute_with_output(
