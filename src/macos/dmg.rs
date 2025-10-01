@@ -134,10 +134,8 @@ pub fn create(ctx: &Context, manifest: &Manifest) -> Result<()> {
     fs::remove_dir_all(&temp_dir)?;
 
     // Clean up icon temp directory if it was created
-    if let Some(ref icon_path) = processed_icon_path {
-        if let Some(icon_dir) = icon_path.parent() {
-            let _ = fs::remove_dir_all(icon_dir);
-        }
+    if let Some(ref icon_dir) = processed_icon_path.as_ref().and_then(|p| p.parent()) {
+        let _ = fs::remove_dir_all(icon_dir);
     }
 
     println!("DMG created successfully: {}", dmg_path.display());
@@ -323,11 +321,7 @@ fn create_dmg_image(
         .find(|line| line.contains("/Volumes/"))
         .and_then(|line| {
             // Find the /Volumes/ part and take everything from there to the end
-            if let Some(pos) = line.find("/Volumes/") {
-                Some(line[pos..].trim())
-            } else {
-                None
-            }
+            line.find("/Volumes/").map(|pos| line[pos..].trim())
         })
         .ok_or_else(|| {
             Error::Custom("Failed to determine mount point from hdiutil output".to_string())
