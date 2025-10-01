@@ -22,18 +22,49 @@ pub fn create(ctx: &Context, manifest: &Manifest) -> Result<()> {
     }
     fs::create_dir_all(&temp_dir)?;
 
-    // Create the .app bundle
+    // Create the .app bundle structure
     let app_name = format!("{}.app", manifest.title);
     let app_path = temp_dir.join(&app_name);
-    create_app_bundle(ctx, manifest, &app_path)?;
+    let (macos_dir, _resources_dir) = create_app_bundle_structure(ctx, manifest, &app_path)?;
 
-    // Copy additional files if specified
+    // Copy files according to copy operations
+    // For macOS DMG, files are copied into the .app bundle's MacOS folder
+    // unless they have specific extensions (like .md, .txt, etc.) which go to DMG root
     for (src, dst) in &manifest.copy_operations {
-        let dest_path = temp_dir.join(dst);
+        let dst_extension = dst.extension().and_then(|e| e.to_str());
+        
+        // Determine if file should go to DMG root or app bundle
+        let is_documentation = matches!(dst_extension, Some("md" | "txt" | "pdf" | "html" | "toml"));
+        
+        let dest_path = if is_documentation {
+            // Documentation files go to DMG root alongside the .app
+            temp_dir.join(dst)
+        } else {
+            // Executable and other files go into the app bundle's MacOS folder
+            macos_dir.join(dst)
+        };
+        
         if ctx.verbose {
             println!("Copying {} to {}", src.display(), dest_path.display());
         }
+        
+        // Ensure parent directory exists
+        if let Some(parent) = dest_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        
         utils::copy_recursively(src, &dest_path)?;
+        
+        // Set executable permissions for files in MacOS folder
+        #[cfg(unix)]
+        if dest_path.starts_with(&macos_dir)
+            && let Ok(metadata) = fs::metadata(&dest_path)
+            && metadata.is_file() {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = metadata.permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&dest_path, perms)?;
+        }
     }
 
     // Create symbolic link to /Applications
@@ -61,7 +92,7 @@ pub fn create(ctx: &Context, manifest: &Manifest) -> Result<()> {
     Ok(())
 }
 
-fn create_app_bundle(ctx: &Context, manifest: &Manifest, app_path: &Path) -> Result<()> {
+fn create_app_bundle_structure(ctx: &Context, manifest: &Manifest, app_path: &Path) -> Result<(std::path::PathBuf, std::path::PathBuf)> {
     // Create .app structure
     let contents_dir = app_path.join("Contents");
     let macos_dir = contents_dir.join("MacOS");
@@ -70,26 +101,8 @@ fn create_app_bundle(ctx: &Context, manifest: &Manifest, app_path: &Path) -> Res
     fs::create_dir_all(&macos_dir)?;
     fs::create_dir_all(&resources_dir)?;
 
-    // Find the binary in target/release
-    let binary_src = ctx.base_dir.join("target").join("release").join(&manifest.name);
-    if !binary_src.exists() {
-        return Err(Error::Custom(format!(
-            "Binary not found at {}. Did you run the build commands?",
-            binary_src.display()
-        )));
-    }
-
-    // Copy binary to MacOS folder
-    let binary_dst = macos_dir.join(&manifest.name);
-    fs::copy(&binary_src, &binary_dst)?;
-    
-    // Set executable permissions
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&binary_dst)?.permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&binary_dst, perms)?;
+    if ctx.verbose {
+        println!("Created app bundle structure at {}", app_path.display());
     }
 
     // Create Info.plist
@@ -100,7 +113,7 @@ fn create_app_bundle(ctx: &Context, manifest: &Manifest, app_path: &Path) -> Res
         process_icon(icon_path, &resources_dir)?;
     }
 
-    Ok(())
+    Ok((macos_dir, resources_dir))
 }
 
 fn create_info_plist(manifest: &Manifest, contents_dir: &Path) -> Result<()> {
@@ -261,12 +274,17 @@ fn create_dmg_image(ctx: &Context, manifest: &Manifest, source_dir: &Path, outpu
         &["attach", "-readwrite", "-noverify", "-noautoopen", temp_dmg.to_str().unwrap()],
     )?;
 
-    // Extract mount point
+    // Extract mount point from hdiutil output
+    // Output format: /dev/diskN    GUID_partition_scheme    
+    //                /dev/diskNs1  Apple_HFS                /Volumes/VolumeName
     let mount_point = mount_output
         .lines()
-        .last()
-        .and_then(|line| line.split_whitespace().last())
-        .ok_or_else(|| Error::Custom("Failed to determine mount point".to_string()))?;
+        .find(|line| line.contains("/Volumes/"))
+        .and_then(|line| {
+            line.split_whitespace()
+                .find(|part| part.starts_with("/Volumes/"))
+        })
+        .ok_or_else(|| Error::Custom("Failed to determine mount point from hdiutil output".to_string()))?;
 
     if ctx.verbose {
         println!("Mounted at: {}", mount_point);

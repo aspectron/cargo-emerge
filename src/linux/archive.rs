@@ -1,7 +1,6 @@
 use crate::context::Context;
 use crate::manifest::Manifest;
 use crate::result::Result;
-use crate::error::Error;
 use crate::utils;
 use std::fs::{self, File};
 use std::path::Path;
@@ -26,34 +25,36 @@ pub fn create_tar_gz(ctx: &Context, manifest: &Manifest) -> Result<()> {
     let app_dir = temp_dir.join(&manifest.name);
     fs::create_dir_all(&app_dir)?;
 
-    // Find and copy the binary
-    let binary_src = ctx.base_dir.join("target").join("release").join(&manifest.name);
-    if !binary_src.exists() {
-        return Err(Error::Custom(format!(
-            "Binary not found at {}. Did you run the build commands?",
-            binary_src.display()
-        )));
-    }
-
-    let binary_dst = app_dir.join(&manifest.name);
-    fs::copy(&binary_src, &binary_dst)?;
-
-    // Set executable permissions
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&binary_dst)?.permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&binary_dst, perms)?;
-    }
-
-    // Copy additional files
+    // Copy files according to copy operations
     for (src, dst) in &manifest.copy_operations {
         let dest_path = app_dir.join(dst);
+        
         if ctx.verbose {
             println!("Copying {} to {}", src.display(), dest_path.display());
         }
+        
+        // Ensure parent directory exists
+        if let Some(parent) = dest_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        
         utils::copy_recursively(src, &dest_path)?;
+        
+        // Set executable permissions for binary files (files without common document extensions)
+        #[cfg(unix)]
+        {
+            let dst_extension = dst.extension().and_then(|e| e.to_str());
+            let is_documentation = matches!(dst_extension, Some("md" | "txt" | "pdf" | "html" | "toml" | "json" | "yml" | "yaml"));
+            
+            if !is_documentation
+                && let Ok(metadata) = fs::metadata(&dest_path)
+                && metadata.is_file() {
+                use std::os::unix::fs::PermissionsExt;
+                let mut perms = metadata.permissions();
+                perms.set_mode(0o755);
+                fs::set_permissions(&dest_path, perms)?;
+            }
+        }
     }
 
     // Create tar.gz archive

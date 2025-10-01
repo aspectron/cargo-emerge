@@ -19,8 +19,12 @@ build = [
 
 # Files and directories to copy into the package
 # Format: { "source/path" = "destination/path" }
-# Paths are relative to the Cargo.toml directory
+# Paths are relative to the Cargo.toml directory for source
+# Destination paths are relative to the package root:
+#   - macOS DMG: Files go into the .app bundle by default
+#   - Linux/Windows: Files go into the archive root directory
 copy = [
+    { "target/release/emerge" = "emerge" },
     { "README.md" = "README.md" },
     { "EXAMPLE.toml" = "EXAMPLE.toml" },
 ]

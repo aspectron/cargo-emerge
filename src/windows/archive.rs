@@ -27,25 +27,19 @@ pub fn create_zip(ctx: &Context, manifest: &Manifest) -> Result<()> {
     let app_dir = temp_dir.join(&manifest.name);
     fs::create_dir_all(&app_dir)?;
 
-    // Find and copy the binary
-    let binary_name = format!("{}.exe", manifest.name);
-    let binary_src = ctx.base_dir.join("target").join("release").join(&binary_name);
-    if !binary_src.exists() {
-        return Err(Error::Custom(format!(
-            "Binary not found at {}. Did you run the build commands?",
-            binary_src.display()
-        )));
-    }
-
-    let binary_dst = app_dir.join(&binary_name);
-    fs::copy(&binary_src, &binary_dst)?;
-
-    // Copy additional files
+    // Copy files according to copy operations
     for (src, dst) in &manifest.copy_operations {
         let dest_path = app_dir.join(dst);
+        
         if ctx.verbose {
             println!("Copying {} to {}", src.display(), dest_path.display());
         }
+        
+        // Ensure parent directory exists
+        if let Some(parent) = dest_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        
         utils::copy_recursively(src, &dest_path)?;
     }
 

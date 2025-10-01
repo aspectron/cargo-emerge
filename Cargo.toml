@@ -22,5 +22,8 @@ title = "Emerge"
 filename = "emerge-$PLATFORM-$VERSION"
 output-folder = "setup"
 build = ["cargo build --release"]
-copy = []
+copy = [
+    { "target/release/emerge" = "emerge" },
+    { "README.md" = "README.md" },
+]
 
