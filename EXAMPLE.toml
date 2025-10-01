@@ -33,12 +33,12 @@ build = [
 ]
 
 # Files and directories to copy into the package
-# Format: { "source/path" : "destination/path" }
+# Format: { "source/path" = "destination/path" }
 # Paths are relative to the Cargo.toml directory
 copy = [
-    { "assets" : "assets" },
-    { "README.md" : "README.md" },
-    { "LICENSE" : "LICENSE" },
+    { "assets" = "assets" },
+    { "README.md" = "README.md" },
+    { "LICENSE" = "LICENSE" },
 ]
 
 # Optional: Path to application icon

@@ -24,7 +24,7 @@ pub struct Package {
     pub metadata: Option<Metadata>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default, Clone)]
 pub struct Metadata {
     #[serde(default)]
     pub emerge: Option<EmergeConfig>,
@@ -107,31 +107,84 @@ impl Manifest {
         let emerge_config = cargo_toml
             .package
             .metadata
+            .clone()
             .and_then(|m| m.emerge)
             .ok_or_else(|| Error::InvalidManifest(
                 "Missing [package.metadata.emerge] section in Cargo.toml".to_string()
             ))?;
 
+        Self::process_manifest(ctx, &cargo_toml.package, emerge_config)
+    }
+
+    /// Load manifest with package info from Cargo.toml and emerge config from alternative file
+    pub fn load_with_emerge_manifest(ctx: &Context, emerge_manifest_path: &PathBuf) -> Result<Self> {
+        // Read Cargo.toml for package information
+        let cargo_content = fs::read_to_string(&ctx.manifest_path)?;
+        let cargo_toml: CargoToml = toml::from_str(&cargo_content)?;
+
+        // Read the alternative manifest file for emerge configuration
+        let emerge_path = if emerge_manifest_path.is_absolute() {
+            emerge_manifest_path.clone()
+        } else {
+            std::env::current_dir()?.join(emerge_manifest_path)
+        };
+
+        if !emerge_path.exists() {
+            return Err(Error::ManifestNotFound(format!(
+                "Emerge manifest not found at: {}",
+                emerge_path.display()
+            )));
+        }
+
+        let emerge_content = fs::read_to_string(&emerge_path)?;
+        
+        // Parse the emerge manifest file
+        // It can be a full TOML with [package.metadata.emerge] or just the emerge section
+        let emerge_config = if let Ok(full_toml) = toml::from_str::<CargoToml>(&emerge_content) {
+            // It's a full Cargo.toml format
+            full_toml
+                .package
+                .metadata
+                .and_then(|m| m.emerge)
+                .ok_or_else(|| Error::InvalidManifest(
+                    format!("Missing [package.metadata.emerge] section in {}", emerge_path.display())
+                ))?
+        } else {
+            // Try parsing as just the emerge section
+            toml::from_str::<EmergeConfig>(&emerge_content).map_err(|e| {
+                Error::InvalidManifest(format!(
+                    "Failed to parse emerge manifest at {}: {}",
+                    emerge_path.display(),
+                    e
+                ))
+            })?
+        };
+
+        Self::process_manifest(ctx, &cargo_toml.package, emerge_config)
+    }
+
+    /// Process the manifest data and create the Manifest struct
+    fn process_manifest(ctx: &Context, package: &Package, emerge_config: EmergeConfig) -> Result<Self> {
         // Setup template processor
         let mut tpl = Tpl::new();
-        tpl.register("NAME", &cargo_toml.package.name);
-        tpl.register("VERSION", &cargo_toml.package.version);
+        tpl.register("NAME", &package.name);
+        tpl.register("VERSION", &package.version);
         tpl.register("PLATFORM", crate::utils::platform_string());
 
         // Process template variables
         let title = emerge_config.title
             .map(|t| tpl.parse(&t))
-            .unwrap_or_else(|| cargo_toml.package.name.clone());
+            .unwrap_or_else(|| package.name.clone());
 
         let filename = emerge_config.filename
             .map(|f| tpl.parse(&f))
             .unwrap_or_else(|| format!("{}-{}-{}", 
-                cargo_toml.package.name, 
+                package.name, 
                 crate::utils::platform_string(),
-                cargo_toml.package.version
+                package.version
             ));
 
-        let description = cargo_toml.package.description
+        let description = package.description
             .clone()
             .unwrap_or_default();
 
@@ -155,8 +208,8 @@ impl Manifest {
             .map(|i| ctx.base_dir.join(tpl.parse(&i)));
 
         Ok(Manifest {
-            name: cargo_toml.package.name,
-            version: cargo_toml.package.version,
+            name: package.name.clone(),
+            version: package.version.clone(),
             description,
             title,
             filename,

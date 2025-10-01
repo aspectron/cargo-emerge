@@ -42,6 +42,13 @@ fn run() -> result::Result<()> {
                 .help("Path to Cargo.toml or directory containing it")
         )
         .arg(
+            Arg::new("manifest")
+                .short('m')
+                .long("manifest")
+                .value_name("FILE")
+                .help("Path to alternative manifest file (e.g., EXAMPLE.toml) for emerge configuration")
+        )
+        .arg(
             Arg::new("verbose")
                 .short('v')
                 .long("verbose")
@@ -78,6 +85,9 @@ fn run() -> result::Result<()> {
     let path = matches.get_one::<String>("path").map(PathBuf::from);
     let manifest_path = utils::find_manifest(path.as_deref())?;
 
+    // Get optional alternative manifest file for emerge configuration
+    let emerge_manifest = matches.get_one::<String>("manifest").map(PathBuf::from);
+
     // Create context
     let ctx = Context::new(manifest_path, verbose);
 
@@ -88,7 +98,11 @@ fn run() -> result::Result<()> {
     let manifest = {
         let spinner = cliclack::spinner();
         spinner.start("Loading manifest...");
-        let result = Manifest::load(&ctx);
+        let result = if let Some(emerge_path) = emerge_manifest {
+            Manifest::load_with_emerge_manifest(&ctx, &emerge_path)
+        } else {
+            Manifest::load(&ctx)
+        };
         match result {
             Ok(m) => {
                 spinner.stop(format!("Loaded manifest for {}", m.title));

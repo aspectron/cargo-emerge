@@ -40,13 +40,14 @@ This will:
 emerge [OPTIONS]
 
 Options:
-  -p, --path <PATH>      Path to Cargo.toml or directory containing it
-  -v, --verbose          Enable verbose output
-  -a, --archive          Create an archived setup (.tar.gz or .zip)
-      --dmg              Create DMG image (default on macOS)
-      --no-build         Skip build commands (use existing binaries)
-  -h, --help             Print help
-  -V, --version          Print version
+  -p, --path <PATH>       Path to Cargo.toml or directory containing it
+  -m, --manifest <FILE>   Path to alternative manifest file for emerge configuration
+  -v, --verbose           Enable verbose output
+  -a, --archive           Create an archived setup (.tar.gz or .zip)
+      --dmg               Create DMG image (default on macOS)
+      --no-build          Skip build commands (use existing binaries)
+  -h, --help              Print help
+  -V, --version           Print version
 ```
 
 ### Examples
@@ -61,9 +62,47 @@ emerge --archive
 # Use a specific Cargo.toml
 emerge --path /path/to/project
 
+# Use an alternative manifest file for emerge configuration
+emerge --manifest my-setup-config.toml
+
 # Skip build and use existing binaries
 emerge --no-build
 ```
+
+### Alternative Manifest Files
+
+You can use the `--manifest` flag to specify an alternative TOML file containing emerge configuration. This is useful for:
+- Managing multiple build configurations
+- Keeping setup configuration separate from Cargo.toml
+- Testing different setups without modifying your project
+
+The manifest file can be in two formats:
+
+**Format 1: Standalone emerge configuration**
+```toml
+title = "My App"
+filename = "myapp-$PLATFORM-$VERSION"
+output-folder = "dist"
+build = ["cargo build --release"]
+copy = []
+icon = "icon.png"
+```
+
+**Format 2: Full Cargo.toml format**
+```toml
+[package.metadata.emerge]
+title = "My App"
+filename = "myapp-$PLATFORM-$VERSION"
+output-folder = "dist"
+build = ["cargo build --release"]
+copy = []
+icon = "icon.png"
+```
+
+When using `--manifest`, emerge will:
+1. Read package information (name, version) from your Cargo.toml
+2. Read emerge configuration from the specified manifest file
+3. Merge them together for the build process
 
 ## Configuration
 
@@ -80,10 +119,10 @@ build = [
     "cargo build --release"
 ]
 
-# Files to copy (source : destination)
+# Files to copy (source = destination)
 copy = [
-    { "resources" : "resources" },
-    { "README.md" : "README.md" }
+    { "resources" = "resources" },
+    { "README.md" = "README.md" }
 ]
 
 # Optional: Path to application icon

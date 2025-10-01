@@ -21,7 +21,6 @@ time = { version = "0.3", features = ["macros"] }
 title = "Emerge"
 filename = "emerge-$PLATFORM-$VERSION"
 output-folder = "setup"
-build = [
-    "cargo build --release"
-]
+build = ["cargo build --release"]
+copy = []
 
