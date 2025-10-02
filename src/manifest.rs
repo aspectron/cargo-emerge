@@ -9,19 +9,86 @@ use std::path::PathBuf;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CargoToml {
-    pub package: Package,
+    #[serde(default)]
+    pub package: Option<Package>,
+    #[serde(default)]
+    pub workspace: Option<Workspace>,
     #[serde(default)]
     pub dependencies: HashMap<String, toml::Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct Package {
-    pub name: String,
-    pub version: String,
+pub struct Workspace {
+    #[serde(default)]
+    pub package: Option<WorkspacePackage>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct WorkspacePackage {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub version: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
     pub metadata: Option<Metadata>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Package {
+    #[serde(deserialize_with = "deserialize_string_or_workspace")]
+    pub name: String,
+    #[serde(deserialize_with = "deserialize_string_or_workspace")]
+    pub version: String,
+    #[serde(default, deserialize_with = "deserialize_option_string_or_workspace")]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub metadata: Option<Metadata>,
+}
+
+// Helper to deserialize either a string or a workspace reference table
+fn deserialize_string_or_workspace<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrWorkspace {
+        String(String),
+        #[allow(dead_code)]
+        Workspace(HashMap<String, toml::Value>),
+    }
+
+    match StringOrWorkspace::deserialize(deserializer)? {
+        StringOrWorkspace::String(s) => Ok(s),
+        StringOrWorkspace::Workspace(_) => {
+            // Return a placeholder when workspace = true is used
+            // This will be ignored anyway since we're loading from external manifest
+            Ok(String::new())
+        }
+    }
+}
+
+fn deserialize_option_string_or_workspace<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrWorkspace {
+        String(String),
+        #[allow(dead_code)]
+        Workspace(HashMap<String, toml::Value>),
+    }
+
+    match Option::<StringOrWorkspace>::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(StringOrWorkspace::String(s)) => Ok(Some(s)),
+        Some(StringOrWorkspace::Workspace(_)) => Ok(None),
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Default, Clone)]
@@ -54,6 +121,10 @@ pub struct EmergeConfig {
     // DMG-specific configuration
     #[serde(default)]
     pub dmg: Option<DmgConfig>,
+
+    // Path to external manifest file
+    #[serde(default)]
+    pub manifest: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -102,20 +173,56 @@ impl Manifest {
     /// Load and parse the manifest from Cargo.toml
     pub fn load(ctx: &Context) -> Result<Self> {
         let content = fs::read_to_string(&ctx.manifest_path)?;
-        let cargo_toml: CargoToml = toml::from_str(&content)?;
 
-        let emerge_config = cargo_toml
-            .package
-            .metadata
-            .clone()
-            .and_then(|m| m.emerge)
-            .ok_or_else(|| {
-                Error::InvalidManifest(
-                    "Missing [package.metadata.emerge] section in Cargo.toml".to_string(),
-                )
-            })?;
+        // Try to parse the Cargo.toml
+        let cargo_toml: CargoToml = toml::from_str(&content).map_err(|e| {
+            Error::InvalidManifest(format!(
+                "Failed to parse Cargo.toml at {}: {}",
+                ctx.manifest_path.display(),
+                e
+            ))
+        })?;
 
-        Self::process_manifest(ctx, &cargo_toml.package, emerge_config)
+        // First check if there's a workspace.package.metadata.emerge section with a manifest property
+        if let Some(manifest_path) = cargo_toml
+            .workspace
+            .as_ref()
+            .and_then(|w| w.package.as_ref())
+            .and_then(|p| p.metadata.as_ref())
+            .and_then(|m| m.emerge.as_ref())
+            .and_then(|e| e.manifest.as_ref())
+        {
+            // Found a manifest property in workspace.package.metadata.emerge
+            // Load the external manifest file
+            let manifest_file = PathBuf::from(manifest_path);
+            return Self::load_with_emerge_manifest(ctx, &manifest_file);
+        }
+
+        // Otherwise, try to load from package.metadata.emerge
+        if let Some(package) = &cargo_toml.package {
+            let emerge_config =
+                package
+                    .metadata
+                    .clone()
+                    .and_then(|m| m.emerge)
+                    .ok_or_else(|| {
+                        Error::InvalidManifest(
+                            "Missing [package.metadata.emerge] section in Cargo.toml".to_string(),
+                        )
+                    })?;
+
+            // Check if package.metadata.emerge has a manifest property
+            if let Some(manifest_path) = &emerge_config.manifest {
+                let manifest_file = PathBuf::from(manifest_path);
+                return Self::load_with_emerge_manifest(ctx, &manifest_file);
+            }
+
+            return Self::process_manifest(ctx, package, emerge_config);
+        }
+
+        Err(Error::InvalidManifest(
+            "No [package] or [workspace.package] section found in Cargo.toml".to_string(),
+        ))
     }
 
     /// Load manifest with package info from Cargo.toml and emerge config from alternative file
@@ -139,40 +246,40 @@ impl Manifest {
 
         let emerge_content = fs::read_to_string(&emerge_path)?;
 
-        // Try parsing as a full Cargo.toml format first
+        // Try parsing as a full Cargo.toml format first (with [package] section)
+        // We use a custom deserializer that ignores workspace-style values
         if let Ok(full_toml) = toml::from_str::<CargoToml>(&emerge_content) {
-            // Check if it has a [package] section
-            // If it does, use it instead of loading Cargo.toml from workspace
-            let emerge_config = full_toml
-                .package
-                .metadata
-                .clone()
-                .and_then(|m| m.emerge)
-                .ok_or_else(|| {
-                    Error::InvalidManifest(format!(
-                        "Missing [package.metadata.emerge] section in {}",
-                        emerge_path.display()
-                    ))
-                })?;
+            // Check if it has a [package] section with actual values (not workspace references)
+            if let Some(package) = &full_toml.package {
+                if let Some(emerge) = package.metadata.as_ref().and_then(|m| m.emerge.as_ref()) {
+                    // Use the package info from the emerge manifest itself
+                    return Self::process_manifest(ctx, package, emerge.clone());
+                }
 
-            // Use the package info from the emerge manifest itself
-            return Self::process_manifest(ctx, &full_toml.package, emerge_config);
+                return Err(Error::InvalidManifest(format!(
+                    "Missing [package.metadata.emerge] section in {}",
+                    emerge_path.display()
+                )));
+            }
         }
 
         // If not a full Cargo.toml, try parsing as just the emerge section (standalone format)
-        let emerge_config = toml::from_str::<EmergeConfig>(&emerge_content).map_err(|e| {
-            Error::InvalidManifest(format!(
-                "Failed to parse emerge manifest at {}: {}",
-                emerge_path.display(),
-                e
-            ))
-        })?;
+        if toml::from_str::<EmergeConfig>(&emerge_content).is_ok() {
+            // For standalone format, we need Cargo.toml for package info
+            // But workspace Cargo.toml files don't have a [package] section, so this won't work
+            return Err(Error::InvalidManifest(format!(
+                "Manifest file {} must contain a [package] section with name and version, \
+                 or use the full Cargo.toml format with [package.metadata.emerge] section",
+                emerge_path.display()
+            )));
+        }
 
-        // For standalone format, we still need Cargo.toml for package info
-        let cargo_content = fs::read_to_string(&ctx.manifest_path)?;
-        let cargo_toml: CargoToml = toml::from_str(&cargo_content)?;
-
-        Self::process_manifest(ctx, &cargo_toml.package, emerge_config)
+        Err(Error::InvalidManifest(format!(
+            "Failed to parse emerge manifest at {}. \
+             It must be either a valid Cargo.toml with [package.metadata.emerge], \
+             or a standalone emerge configuration.",
+            emerge_path.display()
+        )))
     }
 
     /// Process the manifest data and create the Manifest struct

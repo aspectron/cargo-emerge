@@ -54,19 +54,19 @@ Options:
 
 ```bash
 # Create DMG on macOS with verbose output
-emerge --verbose
+cargo emerge --verbose
 
 # Create archive instead of DMG
-emerge --archive
+cargo emerge --archive
 
 # Use a specific Cargo.toml
-emerge --path /path/to/project
+cargo emerge --path /path/to/project
 
 # Use an alternative manifest file for emerge configuration
-emerge --manifest my-setup-config.toml
+cargo emerge --manifest my-setup-config.toml
 
 # Skip build and use existing binaries
-emerge --no-build
+cargo emerge --no-build
 ```
 
 ### Alternative Manifest Files
@@ -99,10 +99,30 @@ copy = []
 icon = "icon.png"
 ```
 
-When using `--manifest`, emerge will:
+When using `--manifest`, cargo emerge will:
 1. Read package information (name, version) from your Cargo.toml
 2. Read emerge configuration from the specified manifest file
 3. Merge them together for the build process
+
+### Automatic Manifest Loading
+
+You can specify a manifest file path directly in your Cargo.toml, and cargo emerge will automatically load it:
+
+**For workspace projects:**
+```toml
+# In workspace Cargo.toml
+[workspace.package.metadata.emerge]
+manifest = "Emerge.toml"
+```
+
+**For regular packages:**
+```toml
+# In package Cargo.toml
+[package.metadata.emerge]
+manifest = "Emerge.toml"
+```
+
+This is particularly useful when you want to keep the emerge configuration in a separate file, especially in workspace projects where the root Cargo.toml doesn't have a [package] section.
 
 ## Configuration
 
