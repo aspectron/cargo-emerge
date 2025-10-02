@@ -26,7 +26,20 @@ pub struct Args {
 impl Args {
     /// Parse command-line arguments
     pub fn parse() -> Self {
-        let matches = Command::new("emerge")
+        // Collect args to check if invoked as `cargo emerge`
+        let args: Vec<String> = std::env::args().collect();
+
+        // Skip the "emerge" argument if present (when invoked as `cargo emerge`)
+        let args_to_parse = if args.len() > 1 && args[1] == "emerge" {
+            let mut filtered = vec![args[0].clone()];
+            filtered.extend_from_slice(&args[2..]);
+            filtered
+        } else {
+            args
+        };
+
+        let matches = Command::new("cargo-emerge")
+            .bin_name("cargo emerge")
             .version(env!("CARGO_PKG_VERSION"))
             .about("Setup generation tool for desktop Rust applications")
             .arg(
@@ -65,11 +78,11 @@ impl Args {
             )
             .arg(
                 Arg::new("no-build")
-                    .long("no-build")
-                    .action(ArgAction::SetTrue)
-                    .help("Skip build commands (use existing binaries)")
+                .long("no-build")
+                .action(ArgAction::SetTrue)
+                .help("Skip build commands (use existing binaries)")
             )
-            .get_matches();
+            .get_matches_from(args_to_parse);
 
         Self {
             verbose: matches.get_flag("verbose"),
